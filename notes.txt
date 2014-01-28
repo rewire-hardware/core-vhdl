@@ -1,0 +1,103 @@
+The goal of this work is a proof of concept to prototype of a tool for
+interfacing ReWire with legacy VHDL code.  Instead of vying for a "foreign 
+function interface", we instead look to recompile VHDL into a ReWire 
+representation using a layered Reactive Resumption over a resumption:
+
+ReacT (ResT (StateT phi I))
+
+The core components we wish to model are within the sets of synthesizeable
+VHDL.  VHDL that isn't synthesizeable is considered to be simulation code
+that is not interesting for our purposes.  We want to reason about and model
+code using ReWire, so our tool "lifts" VHDL into ReWire code.
+The ideal goal here would be a system that takes a VHDL project, converts it to
+Haskell code in the above type, and then is synthesizeable back to some functionally
+equivalent form through the ReWire compiler.
+
+
+The relation of VHDL to Haskell/ReWire:
+
+VHDL has two top-level constructions that loosely relate to Haskell constructions:
+
+VHDL entities and VHDL architectures.  VHDL entities define the "type" of an
+architecture in the sense that they specify the inbound ports versus the
+outbound ports.  For example:
+
+entity D_ff is 
+  port (D, Q, Clk, R, S: in bit;
+        Q, QBar: out bit);
+end entity D_ff;
+
+This entity specifies an entity "type" like a type would be in haskell, with a few extra
+specifications.
+
+The first part of the specification is like saying:
+
+    d_ff :: Bit -> Bit -> Bit -> Bit -> Bit -> ...
+    d_ff d q clk r s = let ... 
+                        in (q, qbar) -- changed states get returned or assigned to
+
+
+In addition to the function's arity and argument types being laid out by entity,
+defines the types and values "effected" by the architecture.  A model reflecting 
+this could do something like return a tuple, or in a system where assignment is
+modeled fairly faithfully (lenses), one could return () and just assume that the
+outbound types were "assigned to" somewhere in the function body.
+
+The corresponding component to the entity construction is the architecture 
+construction.  Where the entity defines the "type" or the "shape", the 
+architecture defines the "body" of the "function" 
+
+architecture <ident> of <ident> is
+  <declarations>
+begin
+  <concurrent_statements>
+end <ident>;
+
+
+Declarations in this case are tantamount to a let binding to various possible
+functions and values that can be in scope in the "begin" body part of the
+architecture.  These will need to be interpreted and then put in scope in the same
+way that the architecture body is interpreted.
+
+The strategy of modeling VHDL in a resumption-monadic style is sketched as follows:
+
+
+VHDL CS -> VHDL AST -> Intermediate Representation -> Interpreter (-> Partial Evaluator -> ReWire)
+
+
+1. VHDL: we will accept will be limited to synthesizeable VHDL living in entities
+   architectures to start.  We will look at adding support for standard VHDL library
+   packages where appropriate.
+
+2. Intermediate Representation: The syntax of VHDL is complex.  The purpose of the IR
+   is to streamline it.  A lot of VHDL constructions are superfluous when describing
+   the same computation in Haskell.  When calculating the values of outbound ports in
+   an architecture, one needs to look at the last assigned value of the signal in the
+   statements in the architecture body.  Something like a let-binding with a lisp-like
+   language may be sufficient for an intermediate representation where the returns/
+   assigns are the final/innermost computed value of the nested lets representing signal
+   assignments.  By lisp-like I really mean core-like.  Sorry if I offended somebody.
+
+3. Interpreter:  Pretty much what you think.  Evaluates the IR and computes a result in
+   ReacT/ResT which you can then run.  Seems legit?
+
+4. Partial Evaluator: Given an interpreter and some various data that accompanies it/
+   is encapsulated by it we should be apply to apply partial evaluation to get our 
+   VHDL into ReWire-style syntax.  This is contingient upon a litany of stuff that has 
+   to play out correctly, but I think (and more importantly Adam thinks) that it can 
+   probably work, at least for a meaningful section of VHDL and ReWire.
+
+5. ReWire: The code produced by the process.  A big question is how "useable" this code
+   will be.  This goes for both verification and for folks who just want to use it as 
+   some kind of a boilerplate to bang on.  The latter is more of an engineering problem.
+   The former is more of a real problem that's probably in our wheelhouse.  One thing to
+   consider that might be low-hanging fruit would be proof preserving properties being 
+   employed in this transformation to guarantee that any properties of the underlying
+   VHDL will percolate up into ReWire and still be there.  Another important thing to 
+   think about would be if the automatically generated ReWire would be "clean enough" to
+   reason about with a model checker/proof checker/whathaveyou.
+
+
+We're not entirely sure about what the type of a converted architecture would be.
+Does it need to be a layered ReacT/ResT or not?  Would one layer of reactivity be enough?
+This needs to be decided. 
